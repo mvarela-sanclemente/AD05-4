@@ -30,108 +30,42 @@ public class Main {
         //Dirección de conexión a base de datos
         String postgres = "jdbc:postgresql://"+url+"/"+db;
         
-        //Tempo en minutos que estara a espera
-        Integer tempo = 1;
-        
-        //Tempo que espera para cada consulta en milisegundos
-        Integer espera = 1000;
-        
         //Conectamos a base de datos
         try {
             Connection conn = DriverManager.getConnection(postgres,props);
             
-            //Creamos a táboa que conterá as mensaxes dos usarios
+            //Creamos a táboa que un array de enteiros e outro de cades de texto
             String sqlTableCreation = new String(
-                "CREATE TABLE IF NOT EXISTS mensaxes ("
+                "CREATE TABLE IF NOT EXISTS probaarrays ("
                         + "id SERIAL PRIMARY KEY, "
-                        + "usuario TEXT NOT NULL, "
-                        + "mensaxe TEXT NOT NULL);");
+                        + "numeros INTEGER[], "
+                        + "mensaxes TEXT[]);");
             CallableStatement createTable = conn.prepareCall(sqlTableCreation);
             createTable.execute();
             createTable.close();
-
-            //Creamos a función que notificará que se engadiu unha nova mensaxe
-            String sqlCreateFunction = new String(
-                "CREATE OR REPLACE FUNCTION notificar_mensaxe() "+
-                "RETURNS trigger AS $$ "+
-                "BEGIN " +
-                    "PERFORM pg_notify('novamensaxe',NEW.id::text); "+
-                "RETURN NEW; "+
-                "END; "+
-                "$$ LANGUAGE plpgsql; ");
-            CallableStatement createFunction = conn.prepareCall(sqlCreateFunction);
-            createFunction.execute();
-            createFunction.close();
-
-            //Creamos o triguer que se executa tras unha nova mensaxe
-            String sqlCreateTrigger = new String(
-                "DROP TRIGGER IF EXISTS not_nova_mensaxe ON mensaxes; "+
-                "CREATE TRIGGER not_nova_mensaxe "+
-                "AFTER INSERT "+
-                "ON mensaxes "+
-                "FOR EACH ROW "+
-                "EXECUTE PROCEDURE notificar_mensaxe(); ");
-            CallableStatement createTrigger = conn.prepareCall(sqlCreateTrigger);
-            createTrigger.execute();
-            createTrigger.close();
-       
-            //Configuramos para estar a escoita
-            PGConnection pgconn = conn.unwrap(PGConnection.class);
-            Statement stmt = conn.createStatement();
-            stmt.execute("LISTEN novamensaxe");
-            stmt.close();
-            System.out.println("Esperando mensaxes...");
             
+            //Creamos a consulta SQL
+            String insertSQL = new String(
+                "INSERT INTO probaarrays(numeros,mensaxes) VALUES(?,?)");
+            PreparedStatement insert = conn.prepareStatement(insertSQL);
             
-            //Variables para controlar o tempo de espera
-            boolean flag=true;
-            long finishAt = new Date().getTime() + (tempo * 60000);
+            //Creamos os dous arrays que imos engadir
+            Integer[] num = {1,2,3,4,5,6,7};
+            String[] men = {"Acceso","a","datos"};
             
-            //Creamos a consulta que necesitaremos para obter a mensaxe
-            PreparedStatement sqlMensaxe = conn.prepareStatement("SELECT usuario,mensaxe FROM mensaxes WHERE id=?;");
+            //Engadimos os arrays, pero primeiro hai que convertilos
+            insert.setArray(1, conn.createArrayOf("INTEGER", num));
+            insert.setArray(2, conn.createArrayOf("TEXT", men));
             
-            //Bucle para ir lendo as mensaxes
-            while(flag){
-                
-                //Collemos todas as notificacions
-                PGNotification notifications[] = pgconn.getNotifications();
-                
-                //Se hai notificacions, recorrémolas e imprimimos os parametros 
-                if(notifications != null){
-                    for(int i=0;i < notifications.length;i++){
-                        
-                        //A notificacion danos como parámetro o id da mensaxe
-                        int id = Integer.parseInt(notifications[i].getParameter());
-                        
-                        //Facemos unha consulta a base de datos e imprimimos a mensaxe
-                        sqlMensaxe.setInt(1, id);
-                        ResultSet rs = sqlMensaxe.executeQuery();
-                        rs.next();
-                        System.out.println(rs.getString(1) + ":" + rs.getString(2));
-                        rs.close();
-                    }
-                }
-                
-                //Esperamos un pouco de tempo entre conexións
-                Thread.sleep(espera);
-                
-                //Comprobamos se pasou o tempo de espera
-                if(new Date().getTime() > finishAt)flag=false;
-                    
-            }
-            
-            //deixamos de escoitar conexións
-            Statement stmt2 = conn.createStatement();
-            stmt2.execute("UNLISTEN novamensaxe");
-            stmt2.close();
+            //Executamos a consulta
+            insert.execute();
+            insert.close();            
             
             if(conn!=null) conn.close();        
         
         } catch (SQLException ex) {
             System.err.println("Error: " + ex.toString());
-        } catch (InterruptedException ex) {
-            System.err.println("Error: " + ex.toString());
-        }     
+        }   
         
     }
     
